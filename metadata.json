@@ -1,0 +1,10 @@
+{
+  "name": "Picto Token",
+  "symbol": "PICTO",
+  "description": "A token representing the Picto concept.",
+  "image": "https://example.com/path/to/icon.png",
+  "properties": {
+    "website": "https://example.com",
+    "whitepaper": "https://example.com/whitepaper.pdf"
+  }
+}
