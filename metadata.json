@@ -2,9 +2,9 @@
   "name": "Picto Token",
   "symbol": "PICTO",
   "description": "A token representing the Picto concept.",
-  "image": "https://example.com/path/to/icon.png",
+  "image": "https://github.com/ddomeke/PictoToken/blob/main/Picto_icon.webp",
   "properties": {
-    "website": "https://example.com",
-    "whitepaper": "https://example.com/whitepaper.pdf"
+    "website": "https://github.com/ddomeke/PictoToken",
+    "whitepaper": "https://github.com/ddomeke/PictoToken"
   }
 }
