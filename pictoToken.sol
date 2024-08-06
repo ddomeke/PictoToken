@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 // Abstract contract providing utility functions for accessing the message sender, data, and value
 abstract contract Context {
-
     // Function to get the current blockchain chain ID
     function _chainId() internal view returns (uint256 id) {
         assembly {
@@ -30,17 +29,16 @@ abstract contract Context {
     }
 
     // Function to get the value of the message
-    function _msgValue() internal view returns(uint256) {
+    function _msgValue() internal view returns (uint256) {
         return msg.value;
     }
-
 }
 
 // Interface for ERC20 standard
 interface IERC20 {
-    function name() external view returns(string memory);
-    function symbol() external view returns(string memory);
-    function decimals() external view returns(uint8);
+    function name() external view returns (string memory);
+    function symbol() external view returns (string memory);
+    function decimals() external view returns (uint8);
     function totalSupply() external view returns (uint256);
     function balanceOf(address account) external view returns (uint256);
     function transfer(address to, uint256 value) external returns (bool);
@@ -53,7 +51,6 @@ interface IERC20 {
 
 // Contract for managing ownership of the contract
 contract Ownable is Context {
-
     address private _owner;  // Address of the contract owner
 
     // Event for ownership transfer
@@ -88,7 +85,6 @@ contract Ownable is Context {
         emit OwnershipTransferred(_owner, address(0));
         _owner = address(0);        
     }
-
 }
 
 // Interface for Uniswap V2 Factory
@@ -98,7 +94,6 @@ interface IUniswapV2Factory {
 
 // Interface for Uniswap V2 Router
 interface IUniswapV2Router02 {
-
     function factory() external pure returns (address);
     function factoryV2() external pure returns (address);
     function WETH() external pure returns (address);
@@ -224,7 +219,6 @@ interface IUniswapV2Router02 {
     function swapExactTokensForETHSupportingFeeOnTransferTokens(
         uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline
     ) external;
-
 }
 
 // Pausable contract for emergency pause functionality
@@ -280,12 +274,10 @@ abstract contract Pausable is Context {
 
 // Reentrancy guard to prevent reentrancy attacks
 abstract contract ReentrancyGuard {
-
     uint256 private constant NOT_ENTERED = 1;
     uint256 private constant ENTERED = 2;
 
     uint256 private _status;
-
 
     error ReentrancyGuardReentrantCall();
 
@@ -310,7 +302,6 @@ abstract contract ReentrancyGuard {
     }
 
     function _nonReentrantAfter() private {
-
         _status = NOT_ENTERED;
     }
 
@@ -320,21 +311,24 @@ abstract contract ReentrancyGuard {
 }
 
 // Main contract for the Picto Token
-contract PictoToken is Context, IERC20, Ownable, Pausable, ReentrancyGuard   {
-
+contract PictoToken is Context, IERC20, Ownable, Pausable, ReentrancyGuard {
     // Addresses for different wallets
     address immutable private _owner;
-    address public foundation_Wallet ;                                                          // Foundation wallet address (30%)
-    address public team_Wallet = 0x1fb3187550f9039DDFFeA31ac5357134D3F553E8;                    // Team wallet address (10%)
-    address public allocated_For_LP_Wallet = 0x3f55d75dECDF127Dd89a95484661f2b0574dD104;        // LP allocation wallet address (50%)
-    address public marketing_Wallet = 0x0000051d7FBF87aaF76a43eaC1CC6FE7e6e00000;               // Marketing wallet address (10%)
+    address public foundation_Wallet;  // Foundation wallet address (30%)
 
     // Mappings
     mapping(address => bool) public admins;
-    mapping (address => uint256) private _balances;
-    mapping (address => mapping (address => uint256)) private _allowances;
+    mapping(address => uint256) private _balances;
+    mapping(address => mapping(address => uint256)) private _allowances;
     mapping(address => bool) private _blacklist;
     mapping(address => bool) private _frozenAccounts;    
+
+    // Struct to store initial distribution details
+    struct Distribution {
+        address account;
+        uint256 amount;
+    }
+    Distribution[] public distributions;
 
     // Token details
     uint8 private constant _decimals = 18;
@@ -346,38 +340,45 @@ contract PictoToken is Context, IERC20, Ownable, Pausable, ReentrancyGuard   {
 
     // Token distribution shares
     uint256 private constant foundation_Share = 360000000 * 10**_decimals;  // 30% for the foundation
-    uint256 private constant team_Share = 120000000 * 10**_decimals;        // 10% for the team
+    uint256 private constant team_Share = 120000000 * 10**_decimals;  // 10% for the team
     uint256 private constant allocated_For_LP_Share = 600000000 * 10**_decimals;  // 50% for LP allocation
-    uint256 private constant marketing_Share = 120000000 * 10**_decimals;   // 10% for marketing   
+    uint256 private constant marketing_Share = 120000000 * 10**_decimals;  // 10% for marketing   
 
     // Modifier to restrict access to authorized addresses
-
     modifier authorized() {
-        if(_msgSender() != _owner && !admins[_msgSender()])
+        if (_msgSender() != _owner && !admins[_msgSender()]) {
             revert UnAuthorizedAccess(_msgSender());
-
+        }
         _;
     }
 
     // Error for unauthorized access
-    error UnAuthorizedAccess(address);
+    error UnAuthorizedAccess(address sender);
+
+    // Error for transfer amount exceeding balance
+    error TransferAmountExceedsBalance(address sender, uint256 amount, uint256 balance);
+
+    // Error for transfer amount exceeding allowance
+    error TransferAmountExceedsAllowance(address sender, address spender, uint256 amount, uint256 allowance);
 
     // Constructor to initialize the contract with token metadata URL and mint initial supply
-    constructor(string memory metadataURL) payable {
-
+    constructor(string memory metadataURL, address team_Wallet, address allocated_For_LP_Wallet, address marketing_Wallet) payable {
         _tokenMetadataURL = metadataURL;
-
         _owner = _msgSender();
-
         foundation_Wallet = payable(_msgSender());
         _balances[address(this)] = _totalSupply;
 
         // Distribute tokens
-        _mint(foundation_Wallet, foundation_Share); 
-        _mint(team_Wallet, team_Share);
-        _mint(allocated_For_LP_Wallet, allocated_For_LP_Share); // Send to contract for Unicrypt lock
-        _mint(marketing_Wallet, marketing_Share);
+        _distributeTokens(foundation_Wallet, foundation_Share);
+        _distributeTokens(team_Wallet, team_Share);
+        _distributeTokens(allocated_For_LP_Wallet, allocated_For_LP_Share);  // Send to contract for Unicrypt lock
+        _distributeTokens(marketing_Wallet, marketing_Share);
+    }
 
+    // Function to distribute tokens and store distribution details
+    function _distributeTokens(address account, uint256 amount) internal {
+        _mint(account, amount);
+        distributions.push(Distribution(account, amount));
     }
 
     // Fallback function to receive Ether
@@ -405,7 +406,10 @@ contract PictoToken is Context, IERC20, Ownable, Pausable, ReentrancyGuard   {
     }
 
     function transfer(address receiver, uint256 amount) public override nonReentrant whenNotPaused returns (bool) {
-        require(amount <= _balances[_msgSender()]);
+        if (receiver == address(0)) revert InvalidAddress(receiver);
+        if (amount == 0) revert InvalidAmount(amount);
+        if (_balances[_msgSender()] < amount) revert TransferAmountExceedsBalance(_msgSender(), amount, _balances[_msgSender()]);
+
         _balances[_msgSender()] -= amount;
         _balances[receiver] += amount;
         emit Transfer(_msgSender(), receiver, amount);
@@ -413,8 +417,11 @@ contract PictoToken is Context, IERC20, Ownable, Pausable, ReentrancyGuard   {
     }
 
     function transferFrom(address owner, address receiver, uint256 amount) public override nonReentrant whenNotPaused returns (bool) {
-        require(amount <= _balances[owner]);
-        require(amount <= _allowances[owner][_msgSender()]);
+        if (owner == address(0)) revert InvalidAddress(owner);
+        if (receiver == address(0)) revert InvalidAddress(receiver);
+        if (amount == 0) revert InvalidAmount(amount);
+        if (_balances[owner] < amount) revert TransferAmountExceedsBalance(owner, amount, _balances[owner]);
+        if (_allowances[owner][_msgSender()] < amount) revert TransferAmountExceedsAllowance(owner, _msgSender(), amount, _allowances[owner][_msgSender()]);
 
         _balances[owner] -= amount;
         _allowances[owner][_msgSender()] -= amount;
@@ -445,11 +452,18 @@ contract PictoToken is Context, IERC20, Ownable, Pausable, ReentrancyGuard   {
     }
 
     function _approve(address owner, address spender, uint256 amount) private {
-        require(owner != address(0), "ERC20: approve from the zero address");
-        require(spender != address(0), "ERC20: approve to the zero address");
+        if (owner == address(0)) revert InvalidAddress(owner);
+        if (spender == address(0)) revert InvalidAddress(spender);
+
         _allowances[owner][spender] = amount;
         emit Approval(owner, spender, amount);
     }
+
+    // Error for invalid address
+    error InvalidAddress(address addr);
+
+    // Error for invalid amount
+    error InvalidAmount(uint256 amount);
 
     // Function to burn tokens
     function burn(address account, uint256 value) external virtual authorized {
@@ -458,7 +472,8 @@ contract PictoToken is Context, IERC20, Ownable, Pausable, ReentrancyGuard   {
 
     // Internal function to burn tokens
     function _burn(address account, uint256 amount) internal virtual {
-        require(account != address(0), "ERC20: burn from the zero address");
+        if (account == address(0)) revert InvalidAddress(account);
+
         _beforeTokenTransfer(account, address(0), amount);
         _balances[account] -= amount;
         _totalSupply -= amount;
@@ -467,7 +482,8 @@ contract PictoToken is Context, IERC20, Ownable, Pausable, ReentrancyGuard   {
 
     // Internal function to mint tokens
     function _mint(address account, uint256 amount) internal virtual {
-        require(account != address(0), "ERC20: mint to the zero address");
+        if (account == address(0)) revert InvalidAddress(account);
+
         _beforeTokenTransfer(address(0), account, amount);
         _balances[account] += amount;
         emit Transfer(address(0), account, amount);
@@ -475,17 +491,27 @@ contract PictoToken is Context, IERC20, Ownable, Pausable, ReentrancyGuard   {
 
     // Hook function to be called before any token transfer
     function _beforeTokenTransfer(address from, address to, uint256 amount) internal virtual {
-        require(!_blacklist[from], "ERC20: sender is blacklisted");
-        require(!_blacklist[to], "ERC20: recipient is blacklisted");
-        require(!_frozenAccounts[from], "ERC20: sender account is frozen");
-        require(!_frozenAccounts[to], "ERC20: recipient account is frozen");
+        if (_blacklist[from]) revert BlacklistedAddress(from);
+        if (_blacklist[to]) revert BlacklistedAddress(to);
+        if (_frozenAccounts[from]) revert FrozenAccount(from);
+        if (_frozenAccounts[to]) revert FrozenAccount(to);
 
         // Minting and burning bypass the max transfer amount check
         if (from != address(0) && to != address(0)) {
-            require(amount <= _maxTransferAmount, "ERC20: transfer amount exceeds the max transfer amount");
+            if (amount > _maxTransferAmount) revert TransferAmountExceedsMaxAmount(amount, _maxTransferAmount);
         }
     }
 
+    // Error for blacklisted address
+    error BlacklistedAddress(address addr);
+
+    // Error for frozen account
+    error FrozenAccount(address addr);
+
+    // Error for transfer amount exceeding max amount
+    error TransferAmountExceedsMaxAmount(uint256 amount, uint256 maxAmount);
+
+    // Function to toggle admin status
     function toggleAdmin(address account) external onlyOwner {
         bool val = admins[account];
         admins[account] = !val;
@@ -524,5 +550,10 @@ contract PictoToken is Context, IERC20, Ownable, Pausable, ReentrancyGuard   {
     // Function to set the maximum transfer amount
     function setMaxTransferAmount(uint256 amount) external authorized {
         _maxTransferAmount = amount;
+    }
+
+    // Function to get the distribution details
+    function getDistributionDetails() external view returns (Distribution[] memory) {
+        return distributions;
     }
 }
